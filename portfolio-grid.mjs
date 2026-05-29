@@ -103,8 +103,8 @@ class PortfolioGrid extends HTMLElement {
     this._adminBar = document.createElement('div');
     this._adminBar.className = 'pg-admin-bar';
     this._adminBar.innerHTML = '<span class="pg-admin-title">Admin</span>' +
-      '<button class="pg-admin-reset">Reset</button>' +
       '<button class="pg-admin-upload">Upload</button>' +
+      '<button class="pg-admin-reset">Reset Order</button>' +
       '<button class="pg-admin-logout">Logout</button>' +
       '<span class="pg-admin-count"></span>';
 
@@ -416,9 +416,11 @@ class PortfolioGrid extends HTMLElement {
   }
 
   reset() {
-    this._state = { hidden: {}, order: [], pinned: {} };
+    this._state.order = [];
+    this._state.pinned = {};
     this._saveState();
-    this._applyState();
+    this._renderGrid();
+    this._updateCount();
   }
 
   // ─── rendering ──────────────────────────────────────
@@ -515,7 +517,16 @@ class PortfolioGrid extends HTMLElement {
     this._adminBar.classList.add('pg-visible');
 
     const resetBtn = this._adminBar.querySelector('.pg-admin-reset');
-    resetBtn.addEventListener('click', () => this.reset());
+    resetBtn.addEventListener('click', function() {
+      if (!confirm('Reset portfolio order and pins?\n\nHidden images will stay hidden. The current order and pinned positions will be cleared, and images will return to their default order.')) return;
+      if (!this._state) return;
+      this._state.order = [];
+      this._state.pinned = {};
+      this._saveState();
+      this._renderGrid();
+      this._updateCount();
+      this._refreshLightbox();
+    }.bind(this));
 
     var uploadBtn = this._adminBar.querySelector('.pg-admin-upload');
     if (uploadBtn) {
