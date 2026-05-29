@@ -250,6 +250,7 @@ class PortfolioGrid extends HTMLElement {
         letter-spacing: 0.05em;
         text-transform: uppercase;
       }
+      .pg-admin-bar .pg-admin-reorder { background: transparent !important; color: var(--portfolio-gold-accent, #c9a044) !important; border: 1px solid var(--portfolio-gold-dim, rgba(201,160,68,0.3)) !important; }
       .pg-admin-bar .pg-admin-count {
         color: var(--portfolio-text-muted, rgba(255,255,255,0.4));
         margin-left: 8px;
@@ -543,6 +544,25 @@ class PortfolioGrid extends HTMLElement {
       });
     }
 
+    // Reorder toggle — shows up/down buttons instead of drag handles
+    this._reorderMode = false;
+    var reorderBtn = this._adminBar.querySelector('.pg-admin-reorder');
+    if (reorderBtn) {
+      reorderBtn.addEventListener('click', function() {
+        this._reorderMode = !this._reorderMode;
+        reorderBtn.textContent = this._reorderMode ? 'Done' : 'Reorder';
+        reorderBtn.style.background = this._reorderMode ? '#cc3333' : '';
+        this._allItems().forEach(function(el) {
+          var up = el.querySelector('.pg-move-up');
+          var down = el.querySelector('.pg-move-down');
+          var drag = el.querySelector('.pg-drag');
+          if (up) up.style.display = this._reorderMode ? '' : 'none';
+          if (down) down.style.display = this._reorderMode ? '' : 'none';
+          if (drag) drag.style.display = this._reorderMode ? 'none' : '';
+        }.bind(this));
+      }.bind(this));
+    }
+
     this._updateCount();
 
     // Add controls to each item
@@ -645,7 +665,30 @@ class PortfolioGrid extends HTMLElement {
           alert('Delete failed. Check your connection.');
         });
       }.bind(this));
-      bar.appendChild(pgDelete);
+      // Up/down move buttons (visible only in reorder mode)
+      var moveUp = document.createElement('div');
+      moveUp.className = 'pg-move-up';
+      moveUp.textContent = '▲';
+      moveUp.title = 'Move up';
+      moveUp.style.display = 'none';
+      moveUp.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this._reorderImage(id, -1);
+      }.bind(this));
+      bar.appendChild(moveUp);
+
+      var moveDown = document.createElement('div');
+      moveDown.className = 'pg-move-down';
+      moveDown.textContent = '▼';
+      moveDown.title = 'Move down';
+      moveDown.style.display = 'none';
+      moveDown.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this._reorderImage(id, 1);
+      }.bind(this));
+      bar.appendChild(moveDown);
 
       el.appendChild(bar);
 
@@ -690,15 +733,21 @@ class PortfolioGrid extends HTMLElement {
     var touchData = null;
 
     el.addEventListener('touchstart', e => {
-      // Only start drag from the drag handle or after a long press
       var target = e.target;
-      if (!target.closest('.pg-drag')) return;
-      e.preventDefault();
-      var touch = e.changedTouches[0];
-      touchData = { fromId: id, startX: touch.screenX, startY: touch.screenY };
-      el.classList.add('pg-dragging');
-      this._allItems().forEach(i => i.classList.remove('pg-drop-before', 'pg-drop-after'));
-    }, { passive: false });
+      // Start drag when touching the drag handle
+      var isDragHandle = target.closest('.pg-drag');
+      // Or start drag on any non-interactive part (long press signal handled via grace)
+      // But never start drag from interactive elements (checkbox, pin, delete, move btns)
+      var isInteractive = target.closest('.pg-checkbox, .pg-pin, .pg-delete, .pg-move-up, .pg-move-down');
+      if (!isDragHandle && isInteractive) return;
+      if (isDragHandle) {
+        e.preventDefault();
+        var touch = e.changedTouches[0];
+        touchData = { fromId: id, startX: touch.screenX, startY: touch.screenY };
+        el.classList.add('pg-dragging');
+        this._allItems().forEach(i => i.classList.remove('pg-drop-before', 'pg-drop-after'));
+      }
+    }, { passive: true });
 
     el.addEventListener('touchmove', e => {
       if (!touchData) return;
