@@ -196,71 +196,19 @@ class PortfolioGrid extends HTMLElement {
       }
       .pg-item.pg-hidden:hover { opacity: 0.5; }
 
-      .pg-checkbox {
-        position: absolute;
-        top: 0; left: 0;
-        z-index: 10;
-        width: 36px; height: 36px;
-        background: rgba(0,0,0,0.75);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 20px;
-        color: #666;
-        transition: all 0.15s;
-      }
       .pg-checkbox:hover { background: rgba(0,0,0,0.9); }
       .pg-checkbox::before { content: "\\2610"; line-height: 1; }
       .pg-checkbox.pg-checked::before { content: "\\2611";
         color: var(--portfolio-gold-accent, #c9a044); }
 
-      .pg-drag {
-        position: absolute;
-        top: 8px; right: 8px;
-        z-index: 5;
-        font-size: 16px;
-        cursor: grab;
-        color: rgba(255,255,255,0.5);
-        background: rgba(0,0,0,0.4);
-        border-radius: 4px;
-        padding: 2px 6px;
-        line-height: 1;
-        user-select: none;
-      }
+      .pg-drag { cursor: grab; }
       .pg-drag:active { cursor: grabbing; }
 
-      .pg-pin {
-        position: absolute;
-        top: 8px; right: 42px;
-        z-index: 5;
-        font-size: 13px;
-        cursor: pointer;
-        color: rgba(255,255,255,0.35);
-        background: rgba(0,0,0,0.4);
-        border-radius: 4px;
-        padding: 1px 5px;
-        line-height: 1;
-        user-select: none;
-        transition: color 0.15s, background 0.15s;
-      }
+      .pg-pin { }
       .pg-pin.pg-pinned {
         color: var(--portfolio-gold-accent, #c9a044);
       }
-      .pg-delete {
-        position: absolute;
-        top: 8px; right: 72px;
-        z-index: 5;
-        font-size: 13px;
-        cursor: pointer;
-        color: rgba(255,100,100,0.6);
-        background: rgba(0,0,0,0.4);
-        border-radius: 4px;
-        padding: 1px 5px;
-        line-height: 1;
-        user-select: none;
-        transition: color 0.15s, background 0.15s;
-      }
+      .pg-delete { color: rgba(255,120,120,0.7); }
       .pg-delete:hover {
         color: #ff4444;
         background: rgba(0,0,0,0.7);
@@ -270,10 +218,10 @@ class PortfolioGrid extends HTMLElement {
         opacity: 0.3; transform: scale(0.95); z-index: 100;
       }
       .pg-item.pg-drop-before {
-        box-shadow: 0 -4px 0 0 var(--portfolio-gold-accent, #c9a044);
+        box-shadow: -4px 0 0 0 var(--portfolio-gold-accent, #c9a044);
       }
       .pg-item.pg-drop-after {
-        box-shadow: 0 4px 0 0 var(--portfolio-gold-accent, #c9a044);
+        box-shadow: 4px 0 0 0 var(--portfolio-gold-accent, #c9a044);
       }
 
       .pg-admin-bar {
@@ -315,6 +263,45 @@ class PortfolioGrid extends HTMLElement {
         font-size: 12px;
         margin-left: auto;
         transition: opacity 0.3s;
+      }
+      .pg-admin-bar-overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 2px;
+        padding: 3px 4px;
+        background: rgba(0,0,0,0.75);
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+      .pg-item:hover .pg-admin-bar-overlay,
+      .pg-item:focus-visible .pg-admin-bar-overlay {
+        opacity: 1;
+      }
+      .pg-item.pg-hidden .pg-admin-bar-overlay {
+        opacity: 1;
+      }
+      .pg-admin-bar-overlay > * {
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 15px;
+        cursor: pointer;
+        color: rgba(255,255,255,0.8);
+        background: rgba(0,0,0,0.3);
+        border-radius: 2px;
+        user-select: none;
+        transition: color 0.15s, background 0.15s;
+        flex-shrink: 0;
+      }
+      .pg-admin-bar-overlay > *:hover {
+        background: rgba(0,0,0,0.6);
+        color: #fff;
       }
     `;
   }
@@ -718,8 +705,6 @@ class PortfolioGrid extends HTMLElement {
       e.preventDefault();
       var touch = e.changedTouches[0];
 
-      // Temporarily suppress pointer events on dragged element so elementFromPoint
-      // returns the element underneath, not the dragged one
       var prevPointer = el.style.pointerEvents;
       el.style.pointerEvents = 'none';
 
@@ -729,24 +714,31 @@ class PortfolioGrid extends HTMLElement {
       var dropEl = elem ? elem.closest('.pg-item') : null;
       if (dropEl && dropEl !== el) {
         this._showDropIndicator(dropEl, touch.clientX, touch.clientY);
+        touchData.dropTarget = dropEl;
+        touchData.dropX = touch.clientX;
+        touchData.dropY = touch.clientY;
       }
     }, { passive: false });
 
     el.addEventListener('touchend', e => {
       if (!touchData) return;
       e.preventDefault();
-      var touch = e.changedTouches[0];
       el.classList.remove('pg-dragging');
 
-      // Temporarily suppress pointer events to find the actual drop target
-      var prevPointer = el.style.pointerEvents;
-      el.style.pointerEvents = 'none';
-      var elem = document.elementFromPoint(touch.clientX, touch.clientY);
-      el.style.pointerEvents = prevPointer;
+      // Use the last known drop target from touchmove (more reliable than elementFromPoint on lift)
+      var dropEl = touchData.dropTarget || null;
 
-      var dropEl = elem ? elem.closest('.pg-item') : null;
+      // Fallback: if we never got a move event, try elementFromPoint
+      if (!dropEl) {
+        var prevPointer = el.style.pointerEvents;
+        el.style.pointerEvents = 'none';
+        var elem = document.elementFromPoint(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+        el.style.pointerEvents = prevPointer;
+        dropEl = elem ? elem.closest('.pg-item') : null;
+      }
+
       if (dropEl && dropEl !== el) {
-        this._completeDrop(dropEl, id, touchData.fromId, touch.clientX, touch.clientY);
+        this._completeDrop(dropEl, id, touchData.fromId, touchData.dropX || e.changedTouches[0].clientX, touchData.dropY || e.changedTouches[0].clientY);
       } else {
         this._allItems().forEach(i => i.classList.remove('pg-drop-before', 'pg-drop-after'));
       }
@@ -756,9 +748,8 @@ class PortfolioGrid extends HTMLElement {
 
   _showDropIndicator(el, clientX, clientY) {
     var rect = el.getBoundingClientRect();
-    var midY = rect.top + rect.height / 2;
     var midX = rect.left + rect.width / 2;
-    var before = clientY < midY || (Math.abs(clientY - midY) < 10 && clientX < midX);
+    var before = clientX < midX;
     this._allItems().forEach(i => i.classList.remove('pg-drop-before', 'pg-drop-after'));
     el.classList.add(before ? 'pg-drop-before' : 'pg-drop-after');
   }
@@ -768,8 +759,8 @@ class PortfolioGrid extends HTMLElement {
     if (fromId === targetId) return;
 
     var rect = dropEl.getBoundingClientRect();
-    var midY = rect.top + rect.height / 2;
-    var dropBefore = clientY < midY || (Math.abs(clientY - midY) < 10 && clientX < rect.left + rect.width / 2);
+    var midX = rect.left + rect.width / 2;
+    var dropBefore = clientX < midX;
 
     var ids = this._allItems().map(function(i) { return i.dataset.id; });
     var order = this._state.order.length ? [].concat(this._state.order) : [].concat(ids);
