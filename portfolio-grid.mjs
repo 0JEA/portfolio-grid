@@ -402,7 +402,11 @@ class PortfolioGrid extends HTMLElement {
     if (!this._images.length) return;
 
     const order = this._state.order;
-    let sorted = this._images.slice();
+    // For non-admin: remove hidden images entirely so grid reflows
+    let filtered = this._admin ? this._images : this._images.filter(function(img) {
+      return !this._state.hidden[img.id];
+    }.bind(this));
+    let sorted = filtered.slice();
 
     if (order && order.length) {
       // Detect new images not yet in the order
@@ -446,10 +450,9 @@ class PortfolioGrid extends HTMLElement {
         'decoding="async" alt="' + this._esc(img.alt) + '" ' +
         'width="800" height="800" draggable="false">';
 
-    // Apply visibility state
+    // Apply visibility state (greyed out for admin, removed for non-admin)
     if (this._state.hidden[img.id]) {
       el.classList.add('pg-hidden');
-      if (!this._admin) el.style.display = 'none';
     }
 
     return el;
@@ -457,17 +460,21 @@ class PortfolioGrid extends HTMLElement {
 
   _applyState() {
     if (!this._ready) return;
-    const items = Array.from(this._grid.querySelectorAll('.pg-item'));
-
-    items.forEach(el => {
-      const id = el.dataset.id;
-      if (this._state.hidden[id]) {
-        el.classList.add('pg-hidden');
-      } else {
-        el.classList.remove('pg-hidden');
-      }
-    });
-
+    if (this._admin) {
+      // Admin: just toggle the hidden class
+      const items = Array.from(this._grid.querySelectorAll('.pg-item'));
+      items.forEach(el => {
+        const id = el.dataset.id;
+        if (this._state.hidden[id]) {
+          el.classList.add('pg-hidden');
+        } else {
+          el.classList.remove('pg-hidden');
+        }
+      });
+    } else {
+      // Non-admin: re-render to remove hidden images
+      this._renderGrid();
+    }
     this._updateCount();
     this._refreshLightbox();
   }
