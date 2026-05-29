@@ -104,6 +104,7 @@ class PortfolioGrid extends HTMLElement {
     this._adminBar.className = 'pg-admin-bar';
     this._adminBar.innerHTML = '<span class="pg-admin-title">Admin</span>' +
       '<button class="pg-admin-reset">Reset</button>' +
+      '<button class="pg-admin-logout">Logout</button>' +
       '<span class="pg-admin-count"></span>';
 
     // Inject a <style> into the element for scoped defaults (overridable via custom properties)
@@ -243,6 +244,24 @@ class PortfolioGrid extends HTMLElement {
       .pg-pin.pg-pinned {
         color: var(--portfolio-gold-accent, #c9a044);
       }
+      .pg-delete {
+        position: absolute;
+        top: 8px; right: 72px;
+        z-index: 5;
+        font-size: 13px;
+        cursor: pointer;
+        color: rgba(255,100,100,0.6);
+        background: rgba(0,0,0,0.4);
+        border-radius: 4px;
+        padding: 1px 5px;
+        line-height: 1;
+        user-select: none;
+        transition: color 0.15s, background 0.15s;
+      }
+      .pg-delete:hover {
+        color: #ff4444;
+        background: rgba(0,0,0,0.7);
+      }
 
       .pg-item.pg-dragging {
         opacity: 0.3; transform: scale(0.95); z-index: 100;
@@ -266,6 +285,7 @@ class PortfolioGrid extends HTMLElement {
         color: var(--portfolio-gold-accent, #c9a044);
       }
       .pg-admin-bar.pg-visible { display: flex; }
+      .pg-admin-logout { background: transparent !important; color: var(--portfolio-text-muted, rgba(255,255,255,0.4)) !important; border: 1px solid var(--portfolio-border, rgba(255,255,255,0.1)) !important; }
       .pg-admin-bar button {
         background: var(--portfolio-gold-accent, #c9a044);
         color: #111009;
@@ -495,6 +515,14 @@ class PortfolioGrid extends HTMLElement {
     const resetBtn = this._adminBar.querySelector('.pg-admin-reset');
     resetBtn.addEventListener('click', () => this.reset());
 
+    var logoutBtn = this._adminBar.querySelector('.pg-admin-logout');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', function() {
+        try { sessionStorage.removeItem('pg-admin'); } catch(e) {}
+        window.location.href = '/';
+      });
+    }
+
     this._updateCount();
 
     // Add controls to each item
@@ -546,6 +574,46 @@ class PortfolioGrid extends HTMLElement {
         this._saveState();
       });
       el.appendChild(pin);
+
+      // Delete button (only for uploaded images, not Instagram)
+      var pgDelete = document.createElement('div');
+      pgDelete.className = 'pg-delete';
+      pgDelete.textContent = '\u2716';
+      pgDelete.title = 'Delete this image';
+      pgDelete.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        if (!confirm('Delete this image permanently?')) return;
+        var pw = '';
+        try { pw = sessionStorage.getItem('pg-admin-pw') || ''; } catch(e) {}
+        if (!pw) { pw = prompt('Enter admin password to delete'); if (!pw) return; }
+        pgDelete.textContent = '...';
+        fetch('/api/delete-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artist: this._uid, id: id, password: pw })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.success) {
+            el.style.transition = 'transform 0.3s, opacity 0.3s';
+            el.style.transform = 'scale(0.5)';
+            el.style.opacity = '0';
+            setTimeout(function() {
+              el.remove();
+              this._refreshLightbox();
+            }.bind(this), 300);
+          } else {
+            pgDelete.textContent = '\u2716';
+            alert('Delete failed: ' + (data.error || 'unknown error'));
+          }
+        }.bind(this))
+        .catch(function() {
+          pgDelete.textContent = '\u2716';
+          alert('Delete failed. Check your connection.');
+        });
+      }.bind(this));
+      el.appendChild(pgDelete);
 
       // Drag-and-drop
       this._makeDraggable(el, id);
