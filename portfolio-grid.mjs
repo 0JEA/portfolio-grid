@@ -56,6 +56,10 @@ class PortfolioGrid extends HTMLElement {
     this._admin = new URLSearchParams(window.location.search).has(
       this.getAttribute('admin-param') || 'admin'
     );
+    // Also allow admin mode via sessionStorage (set by /admin login page)
+    if (!this._admin) {
+      try { this._admin = sessionStorage.getItem('pg-admin') === 'true'; } catch(e) {}
+    }
 
     this._columns = (this.getAttribute('columns') || '2,3,4').split(',').map(Number);
     this._stateUrl = this.getAttribute('state-url') || '';
