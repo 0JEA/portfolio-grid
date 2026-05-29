@@ -564,8 +564,14 @@ class PortfolioGrid extends HTMLElement {
       const id = el.dataset.id;
 
       // Checkbox
+      // Admin icon bar container
+      var bar = document.createElement('div');
+      bar.className = 'pg-admin-bar-overlay';
+
+      // Checkbox
       const cb = document.createElement('div');
       cb.className = 'pg-checkbox' + (this._state.hidden[id] ? '' : ' pg-checked');
+      cb.title = this._state.hidden[id] ? 'Show image' : 'Hide image';
       cb.addEventListener('click', e => {
         e.stopPropagation();
         e.preventDefault();
@@ -581,13 +587,7 @@ class PortfolioGrid extends HTMLElement {
         this._updateCount();
         this._showStatus('Image ' + (this._state.hidden[id] ? 'hidden' : 'visible'));
       });
-      el.appendChild(cb);
-
-      // Drag handle
-      const dh = document.createElement('div');
-      dh.className = 'pg-drag';
-      dh.textContent = '\u2630';
-      el.appendChild(dh);
+      bar.appendChild(cb);
 
       // Pin button
       const pin = document.createElement('div');
@@ -609,9 +609,16 @@ class PortfolioGrid extends HTMLElement {
         this._updateCount();
         this._showStatus('Image ' + (this._state.pinned[id] ? 'pinned' : 'unpinned'));
       });
-      el.appendChild(pin);
+      bar.appendChild(pin);
 
-      // Delete button (only for uploaded images, not Instagram)
+      // Drag handle
+      const dh = document.createElement('div');
+      dh.className = 'pg-drag';
+      dh.textContent = '\u2630';
+      dh.title = 'Drag to reorder';
+      bar.appendChild(dh);
+
+      // Delete button
       var pgDelete = document.createElement('div');
       pgDelete.className = 'pg-delete';
       pgDelete.textContent = '\u2716';
@@ -619,7 +626,6 @@ class PortfolioGrid extends HTMLElement {
       pgDelete.addEventListener('click', function(e) {
         e.stopPropagation();
         e.preventDefault();
-        // Show image caption/ID in confirmation for context
         var caption = el.getAttribute('aria-label') || id;
         if (!confirm('Delete "' + caption.slice(0, 60) + '"?\n\nThis permanently removes the image from disk. This cannot be undone.')) return;
         var pw = '';
@@ -652,7 +658,9 @@ class PortfolioGrid extends HTMLElement {
           alert('Delete failed. Check your connection.');
         });
       }.bind(this));
-      el.appendChild(pgDelete);
+      bar.appendChild(pgDelete);
+
+      el.appendChild(bar);
 
       // Drag-and-drop
       this._makeDraggable(el, id);
