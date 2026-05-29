@@ -294,6 +294,10 @@ class PortfolioGrid extends HTMLElement {
 
     try {
       const resp = await fetch(src, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) {
+        console.warn('[portfolio-grid] Image fetch returned ' + resp.status);
+        return;
+      }
       const data = await resp.json();
 
       // Support both {success: true, posts: [...]} (insta-bridge) and plain arrays
@@ -324,6 +328,10 @@ class PortfolioGrid extends HTMLElement {
           headers: this._adminKey ? { 'X-Admin-Key': this._adminKey } : {},
           signal: AbortSignal.timeout(5000),
         });
+        if (!resp.ok) {
+          console.warn('[portfolio-grid] State fetch returned ' + resp.status);
+          return;
+        }
         const data = await resp.json();
         // Accept both {success: true, state: {uid: ...}} and direct state objects
         const serverState = data.success && data.state ? (data.state[this._uid] || data.state) : data;
@@ -664,9 +672,9 @@ class PortfolioGrid extends HTMLElement {
       this._lb.setAttribute('aria-modal', 'true');
 
       this._lb.innerHTML =
-        '<button id="pg-lb-close-' + this._uid + '" class="pg-lb-close">&times;</button>' +
-        '<button id="pg-lb-prev-' + this._uid + '" class="pg-lb-nav" style="left:8px">&lang;</button>' +
-        '<button id="pg-lb-next-' + this._uid + '" class="pg-lb-nav" style="right:8px">&rang;</button>' +
+        '<button id="pg-lb-close-' + this._uid + '" class="pg-lb-close" aria-label="Close">&times;</button>' +
+        '<button id="pg-lb-prev-' + this._uid + '" class="pg-lb-nav" style="left:8px" aria-label="Previous image">&lang;</button>' +
+        '<button id="pg-lb-next-' + this._uid + '" class="pg-lb-nav" style="right:8px" aria-label="Next image">&rang;</button>' +
         '<div class="pg-lb-inner">' +
           '<img id="pg-lb-img-' + this._uid + '" class="pg-lb-img" src="" alt="">' +
         '</div>' +
@@ -756,6 +764,7 @@ class PortfolioGrid extends HTMLElement {
 
   _navLightbox(dir) {
     const vis = this._visibleItems();
+    if (!vis.length) return;
     this._lightboxIdx = (this._lightboxIdx + dir + vis.length) % vis.length;
     this._showLightbox();
   }
