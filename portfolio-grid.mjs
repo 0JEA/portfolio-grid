@@ -104,6 +104,7 @@ class PortfolioGrid extends HTMLElement {
     this._adminBar.className = 'pg-admin-bar';
     this._adminBar.innerHTML = '<span class="pg-admin-title">Admin</span>' +
       '<button class="pg-admin-reset">Reset</button>' +
+      '<button class="pg-admin-upload">Upload</button>' +
       '<button class="pg-admin-logout">Logout</button>' +
       '<span class="pg-admin-count"></span>';
 
@@ -285,6 +286,7 @@ class PortfolioGrid extends HTMLElement {
         color: var(--portfolio-gold-accent, #c9a044);
       }
       .pg-admin-bar.pg-visible { display: flex; }
+      .pg-admin-upload { }
       .pg-admin-logout { background: transparent !important; color: var(--portfolio-text-muted, rgba(255,255,255,0.4)) !important; border: 1px solid var(--portfolio-border, rgba(255,255,255,0.1)) !important; }
       .pg-admin-bar button {
         background: var(--portfolio-gold-accent, #c9a044);
@@ -514,6 +516,13 @@ class PortfolioGrid extends HTMLElement {
 
     const resetBtn = this._adminBar.querySelector('.pg-admin-reset');
     resetBtn.addEventListener('click', () => this.reset());
+
+    var uploadBtn = this._adminBar.querySelector('.pg-admin-upload');
+    if (uploadBtn) {
+      uploadBtn.addEventListener('click', function() {
+        window.location.href = '/admin/upload/';
+      });
+    }
 
     var logoutBtn = this._adminBar.querySelector('.pg-admin-logout');
     if (logoutBtn) {
