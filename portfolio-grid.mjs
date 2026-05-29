@@ -318,38 +318,9 @@ class PortfolioGrid extends HTMLElement {
   // ─── state management ────────────────────────────────
 
   async _loadState() {
-    if (!this._admin) return;
-    const key = 'pg-state-' + this._uid;
+    var key = 'pg-state-' + this._uid;
 
-    // Load from server first if configured
-    if (this._stateUrl) {
-      try {
-        const resp = await fetch(this._stateUrl, {
-          headers: this._adminKey ? { 'X-Admin-Key': this._adminKey } : {},
-          signal: AbortSignal.timeout(5000),
-        });
-        if (!resp.ok) {
-          console.warn('[portfolio-grid] State fetch returned ' + resp.status);
-          return;
-        }
-        const data = await resp.json();
-        // Accept both {success: true, state: {uid: ...}} and direct state objects
-        const serverState = data.success && data.state ? (data.state[this._uid] || data.state) : data;
-        if (serverState && (serverState.hidden || serverState.order)) {
-          this._state = {
-            hidden: { ...(serverState.hidden || {}) },
-            order: [...(serverState.order || [])],
-            pinned: { ...(serverState.pinned || {}) },
-          };
-          this._saveLocal();
-          return;
-        }
-      } catch (e) {
-        console.warn('[portfolio-grid] Server state load failed:', e.message);
-      }
-    }
-
-    // Fallback to localStorage
+    // 1. Load from localStorage first (instant — works for all visitors)
     try {
       const raw = localStorage.getItem(key);
       if (raw) {
@@ -361,6 +332,32 @@ class PortfolioGrid extends HTMLElement {
         };
       }
     } catch (e) { /* ignore */ }
+
+    // 2. Also sync from server so state works in incognito / cross-browser
+    if (this._stateUrl) {
+      try {
+        const resp = await fetch(this._stateUrl, {
+          headers: this._adminKey ? { 'X-Admin-Key': this._adminKey } : {},
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!resp.ok) {
+          console.warn('[portfolio-grid] State fetch returned ' + resp.status);
+          return;
+        }
+        const data = await resp.json();
+        const serverState = data.success && data.state ? (data.state[this._uid] || data.state) : data;
+        if (serverState && (serverState.hidden || serverState.order)) {
+          this._state = {
+            hidden: { ...(serverState.hidden || {}) },
+            order: [...(serverState.order || [])],
+            pinned: { ...(serverState.pinned || {}) },
+          };
+          this._saveLocal();
+        }
+      } catch (e) {
+        console.warn('[portfolio-grid] Server state load failed:', e.message);
+      }
+    }
   }
 
   _saveState() {
