@@ -65,6 +65,7 @@ class PortfolioGrid extends HTMLElement {
     this._loadState().then(() => {
       this._loadImages().then(() => {
         this._renderGrid();
+        this._applyState();
         this._initAdmin();
         this._initLightbox();
         this._ready = true;
@@ -77,6 +78,7 @@ class PortfolioGrid extends HTMLElement {
     if (name === 'src') {
       this._loadImages().then(() => {
         this._renderGrid();
+        this._applyState();
         this._initAdmin();
       });
     }
@@ -447,6 +449,7 @@ class PortfolioGrid extends HTMLElement {
     // Apply visibility state
     if (this._state.hidden[img.id]) {
       el.classList.add('pg-hidden');
+      if (!this._admin) el.style.display = 'none';
     }
 
     return el;
@@ -844,6 +847,7 @@ class PortfolioGrid extends HTMLElement {
     if (this._ready) {
       this._loadImages().then(() => {
         this._renderGrid();
+        this._applyState();
         this._initAdmin();
       });
     }
