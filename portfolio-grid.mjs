@@ -106,7 +106,9 @@ class PortfolioGrid extends HTMLElement {
       '<button class="pg-admin-upload">Upload</button>' +
       '<button class="pg-admin-reset">Reset Order</button>' +
       '<button class="pg-admin-logout">Logout</button>' +
-      '<span class="pg-admin-count"></span>';
+      '<span class="pg-admin-count"></span>' +
+      '<span class="pg-admin-pin-count"></span>' +
+      '<span class="pg-admin-status"></span>';
 
     // Inject a <style> into the element for scoped defaults (overridable via custom properties)
     if (!document.getElementById('pg-inline-styles')) {
@@ -302,7 +304,17 @@ class PortfolioGrid extends HTMLElement {
       }
       .pg-admin-bar .pg-admin-count {
         color: var(--portfolio-text-muted, rgba(255,255,255,0.4));
+        margin-left: 8px;
+      }
+      .pg-admin-pin-count {
+        color: var(--portfolio-gold-accent, #c9a044);
+        font-size: 12px;
+        margin-left: 8px;
+      }
+      .pg-admin-status {
+        font-size: 12px;
         margin-left: auto;
+        transition: opacity 0.3s;
       }
     `;
   }
@@ -526,6 +538,7 @@ class PortfolioGrid extends HTMLElement {
       this._renderGrid();
       this._updateCount();
       this._refreshLightbox();
+      this._showStatus('Order and pins reset');
     }.bind(this));
 
     var uploadBtn = this._adminBar.querySelector('.pg-admin-upload');
@@ -566,6 +579,7 @@ class PortfolioGrid extends HTMLElement {
         }
         this._saveState();
         this._updateCount();
+        this._showStatus('Image ' + (this._state.hidden[id] ? 'hidden' : 'visible'));
       });
       el.appendChild(cb);
 
@@ -592,6 +606,8 @@ class PortfolioGrid extends HTMLElement {
           pin.title = 'Pin to lock position';
         }
         this._saveState();
+        this._updateCount();
+        this._showStatus('Image ' + (this._state.pinned[id] ? 'pinned' : 'unpinned'));
       });
       el.appendChild(pin);
 
@@ -603,7 +619,9 @@ class PortfolioGrid extends HTMLElement {
       pgDelete.addEventListener('click', function(e) {
         e.stopPropagation();
         e.preventDefault();
-        if (!confirm('Delete this image permanently?')) return;
+        // Show image caption/ID in confirmation for context
+        var caption = el.getAttribute('aria-label') || id;
+        if (!confirm('Delete "' + caption.slice(0, 60) + '"?\n\nThis permanently removes the image from disk. This cannot be undone.')) return;
         var pw = '';
         try { pw = sessionStorage.getItem('pg-admin-pw') || ''; } catch(e) {}
         if (!pw) { pw = prompt('Enter admin password to delete'); if (!pw) return; }
@@ -623,6 +641,7 @@ class PortfolioGrid extends HTMLElement {
               el.remove();
               this._refreshLightbox();
             }.bind(this), 300);
+            this._showStatus('Image deleted');
           } else {
             pgDelete.textContent = '\u2716';
             alert('Delete failed: ' + (data.error || 'unknown error'));
@@ -760,6 +779,7 @@ class PortfolioGrid extends HTMLElement {
     this._state.order = order;
     this._saveState();
 
+    this._showStatus('Image moved');
     this._flipReorder(function() {
       this._renderGrid();
       this._initAdmin();
@@ -792,6 +812,15 @@ class PortfolioGrid extends HTMLElement {
     });
   }
 
+  _showStatus(msg, isError) {
+    var el = this._adminBar.querySelector('.pg-admin-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = isError ? '#cc3333' : 'var(--portfolio-gold-accent, #c9a044)';
+    clearTimeout(this._statusTimer);
+    this._statusTimer = setTimeout(function() { el.textContent = ''; }, 3000);
+  }
+
   _ensureOrderInitialized() {
     const ids = this._allItems().map(el => el.dataset.id);
     if (!this._state.order.length) {
@@ -815,6 +844,12 @@ class PortfolioGrid extends HTMLElement {
     const visible = this._allItems().filter(el => !el.classList.contains('pg-hidden')).length;
     const count = this._adminBar.querySelector('.pg-admin-count');
     if (count) count.textContent = visible + ' / ' + this._images.length + ' visible';
+
+    const pinCount = this._adminBar.querySelector('.pg-admin-pin-count');
+    if (pinCount) {
+      var pinned = Object.keys(this._state.pinned || {}).filter(function(k) { return this._state.pinned[k]; }.bind(this)).length;
+      pinCount.textContent = pinned > 0 ? pinned + ' pinned' : '';
+    }
   }
 
   // ─── lightbox ───────────────────────────────────────
