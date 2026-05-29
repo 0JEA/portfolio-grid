@@ -599,8 +599,14 @@ class PortfolioGrid extends HTMLElement {
       e.preventDefault();
       var touch = e.changedTouches[0];
 
-      // Find the element under the finger
+      // Temporarily suppress pointer events on dragged element so elementFromPoint
+      // returns the element underneath, not the dragged one
+      var prevPointer = el.style.pointerEvents;
+      el.style.pointerEvents = 'none';
+
       var elem = document.elementFromPoint(touch.clientX, touch.clientY);
+      el.style.pointerEvents = prevPointer;
+
       var dropEl = elem ? elem.closest('.pg-item') : null;
       if (dropEl && dropEl !== el) {
         this._showDropIndicator(dropEl, touch.clientX, touch.clientY);
@@ -613,8 +619,12 @@ class PortfolioGrid extends HTMLElement {
       var touch = e.changedTouches[0];
       el.classList.remove('pg-dragging');
 
-      // Find drop target
+      // Temporarily suppress pointer events to find the actual drop target
+      var prevPointer = el.style.pointerEvents;
+      el.style.pointerEvents = 'none';
       var elem = document.elementFromPoint(touch.clientX, touch.clientY);
+      el.style.pointerEvents = prevPointer;
+
       var dropEl = elem ? elem.closest('.pg-item') : null;
       if (dropEl && dropEl !== el) {
         this._completeDrop(dropEl, id, touchData.fromId, touch.clientX, touch.clientY);
@@ -804,7 +814,7 @@ class PortfolioGrid extends HTMLElement {
   _visibleItems() {
     return this._allItems()
       .filter(el => el.style.display !== 'none' && !el.classList.contains('pg-hidden'))
-      .map(el => this._images[parseInt(el.dataset.index)])
+      .map(el => this._images.find(function(img) { return img.id === el.dataset.id; }))
       .filter(Boolean);
   }
 
