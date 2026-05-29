@@ -544,6 +544,7 @@ class PortfolioGrid extends HTMLElement {
   _makeDraggable(el, id) {
     el.draggable = true;
 
+    // ─── Desktop drag ──────────────────────────────
     el.addEventListener('dragstart', e => {
       e.dataTransfer.setData('text/plain', id);
       el.classList.add('pg-dragging');
@@ -557,12 +558,7 @@ class PortfolioGrid extends HTMLElement {
 
     el.addEventListener('dragover', e => {
       e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const midY = rect.top + rect.height / 2;
-      const midX = rect.left + rect.width / 2;
-      const before = e.clientY < midY || (Math.abs(e.clientY - midY) < 10 && e.clientX < midX);
-      this._allItems().forEach(i => i.classList.remove('pg-drop-before', 'pg-drop-after'));
-      el.classList.add(before ? 'pg-drop-before' : 'pg-drop-after');
+      this._showDropIndicator(el, e.clientX, e.clientY);
     });
 
     el.addEventListener('dragleave', () => {
@@ -571,36 +567,91 @@ class PortfolioGrid extends HTMLElement {
 
     el.addEventListener('drop', e => {
       e.preventDefault();
-      el.classList.remove('pg-drop-before', 'pg-drop-after');
-      const fromId = e.dataTransfer.getData('text/plain');
-      if (fromId === id) return;
-
-      const rect = el.getBoundingClientRect();
-      const midY = rect.top + rect.height / 2;
-      const dropBefore = e.clientY < midY || (Math.abs(e.clientY - midY) < 10 && e.clientX < rect.left + rect.width / 2);
-
-      const ids = this._allItems().map(i => i.dataset.id);
-      let order = this._state.order.length ? [...this._state.order] : [...ids];
-
-      const fromIdx = order.indexOf(fromId);
-      let toIdx = order.indexOf(id);
-      if (fromIdx === -1 || toIdx === -1) return;
-
-      order.splice(fromIdx, 1);
-      toIdx = order.indexOf(id);
-      if (toIdx === -1) toIdx = order.indexOf(id);
-      if (!dropBefore && toIdx < order.length - 1) toIdx++;
-      order.splice(toIdx, 0, fromId);
-
-      this._state.order = order;
-      this._saveState();
-
-      // Re-render with FLIP animation
-      this._flipReorder(() => {
-        this._renderGrid();
-        this._initAdmin();
-      });
+      this._completeDrop(el, id, e.dataTransfer.getData('text/plain'), e.clientX, e.clientY);
     });
+
+    // ─── Mobile touch drag ──────────────────────────
+    var touchData = null;
+
+    el.addEventListener('touchstart', e => {
+      // Only start drag from the drag handle or after a long press
+      var target = e.target;
+      if (!target.closest('.pg-drag')) return;
+      e.preventDefault();
+      var touch = e.changedTouches[0];
+      touchData = { fromId: id, startX: touch.screenX, startY: touch.screenY };
+      el.classList.add('pg-dragging');
+      this._allItems().forEach(i => i.classList.remove('pg-drop-before', 'pg-drop-after'));
+    }, { passive: false });
+
+    el.addEventListener('touchmove', e => {
+      if (!touchData) return;
+      e.preventDefault();
+      var touch = e.changedTouches[0];
+
+      // Find the element under the finger
+      var elem = document.elementFromPoint(touch.clientX, touch.clientY);
+      var dropEl = elem ? elem.closest('.pg-item') : null;
+      if (dropEl && dropEl !== el) {
+        this._showDropIndicator(dropEl, touch.clientX, touch.clientY);
+      }
+    }, { passive: false });
+
+    el.addEventListener('touchend', e => {
+      if (!touchData) return;
+      e.preventDefault();
+      var touch = e.changedTouches[0];
+      el.classList.remove('pg-dragging');
+
+      // Find drop target
+      var elem = document.elementFromPoint(touch.clientX, touch.clientY);
+      var dropEl = elem ? elem.closest('.pg-item') : null;
+      if (dropEl && dropEl !== el) {
+        this._completeDrop(dropEl, id, touchData.fromId, touch.clientX, touch.clientY);
+      } else {
+        this._allItems().forEach(i => i.classList.remove('pg-drop-before', 'pg-drop-after'));
+      }
+      touchData = null;
+    });
+  }
+
+  _showDropIndicator(el, clientX, clientY) {
+    var rect = el.getBoundingClientRect();
+    var midY = rect.top + rect.height / 2;
+    var midX = rect.left + rect.width / 2;
+    var before = clientY < midY || (Math.abs(clientY - midY) < 10 && clientX < midX);
+    this._allItems().forEach(i => i.classList.remove('pg-drop-before', 'pg-drop-after'));
+    el.classList.add(before ? 'pg-drop-before' : 'pg-drop-after');
+  }
+
+  _completeDrop(dropEl, targetId, fromId, clientX, clientY) {
+    dropEl.classList.remove('pg-drop-before', 'pg-drop-after');
+    if (fromId === targetId) return;
+
+    var rect = dropEl.getBoundingClientRect();
+    var midY = rect.top + rect.height / 2;
+    var dropBefore = clientY < midY || (Math.abs(clientY - midY) < 10 && clientX < rect.left + rect.width / 2);
+
+    var ids = this._allItems().map(function(i) { return i.dataset.id; });
+    var order = this._state.order.length ? [].concat(this._state.order) : [].concat(ids);
+
+    var fromIdx = order.indexOf(fromId);
+    var toIdx = order.indexOf(targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    order.splice(fromIdx, 1);
+    toIdx = order.indexOf(targetId);
+    if (toIdx === -1) toIdx = order.indexOf(targetId);
+    if (!dropBefore && toIdx < order.length - 1) toIdx++;
+    order.splice(toIdx, 0, fromId);
+
+    this._state.order = order;
+    this._saveState();
+
+    this._flipReorder(function() {
+      this._renderGrid();
+      this._initAdmin();
+    }.bind(this));
   }
 
   _flipReorder(callback) {
