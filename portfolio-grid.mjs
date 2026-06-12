@@ -63,7 +63,11 @@ class PortfolioGrid extends HTMLElement {
 
     this._columns = (this.getAttribute('columns') || '2,3,4').split(',').map(Number);
     this._stateUrl = this.getAttribute('state-url') || '';
-    this._adminKey = this.getAttribute('admin-key') || '';
+    // admin-key attribute, or the credential the portal feed page stores
+    // after verifying the signed-in artist (server checks it on every save)
+    let sessKey = '';
+    try { sessKey = sessionStorage.getItem('pg-admin-pw') || ''; } catch (e) {}
+    this._adminKey = this.getAttribute('admin-key') || sessKey;
 
     this._buildDOM();
     this._loadState().then(() => {
@@ -334,6 +338,7 @@ class PortfolioGrid extends HTMLElement {
       this._images = raw.map((item, i) => ({
         id: item.id || item.id?.replace(/^\d+_/, '').slice(0, 20) || String(i),
         src: item.src || item.images?.['1200'] || item.thumbnail || '',
+        images: item.images || null,
         alt: (item.alt || item.caption || '').replace(/\n/g, ' ').slice(0, 120),
         width: item.width || 1200,
         height: item.height || 1200,
@@ -472,8 +477,17 @@ class PortfolioGrid extends HTMLElement {
     el.setAttribute('aria-label', img.alt ? 'View ' + img.alt : 'View image');
     el.draggable = false;
 
+    let srcset = '';
+    if (img.images && img.images['300'] && img.images['600']) {
+      srcset = 'srcset="' + this._esc(img.images['300']) + ' 300w, ' +
+               this._esc(img.images['600']) + ' 600w, ' +
+               this._esc(img.images['900']) + ' 900w, ' +
+               this._esc(img.images['1200']) + ' 1200w" ' +
+               'sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw" ';
+    }
+
     el.innerHTML =
-      '<img src="' + this._esc(img.src) + '" ' +
+      '<img src="' + this._esc(img.src) + '" ' + srcset +
         'loading="' + (index < 4 ? 'eager' : 'lazy') + '" ' +
         'decoding="async" alt="' + this._esc(img.alt) + '" ' +
         'width="800" height="800" draggable="false">';
@@ -851,6 +865,8 @@ class PortfolioGrid extends HTMLElement {
         if (dx || dy) {
           el.style.transition = 'none';
           el.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
+          // Force reflow so the instant transform applies without animating
+          el.offsetWidth;
           requestAnimationFrame(() => {
             el.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
             el.style.transform = '';
