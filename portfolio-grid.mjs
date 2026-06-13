@@ -44,6 +44,7 @@ class PortfolioGrid extends HTMLElement {
     this._uid = '';
     // Avoid double-init if defined before DOM parse
     this._initCalled = false;
+    this._selectedIds = new Set();
   }
 
   // ─── lifecycle ──────────────────────────────────────
@@ -53,12 +54,23 @@ class PortfolioGrid extends HTMLElement {
     this._initCalled = true;
 
     this._uid = this.getAttribute('id-prefix') || ('pg-' + Math.random().toString(36).slice(2, 8));
-    this._admin = new URLSearchParams(window.location.search).has(
-      this.getAttribute('admin-param') || 'admin'
-    );
-    // Also allow admin mode via sessionStorage (set by /admin login page)
-    if (!this._admin) {
-      try { this._admin = sessionStorage.getItem('pg-admin') === 'true'; } catch(e) {}
+
+    var forceAdmin = this.getAttribute('force-admin') === 'true';
+    if (forceAdmin) {
+      this._admin = true;
+      // Allow overriding the token source for the portal
+      var portalToken = sessionStorage.getItem('pg-firebase-token');
+      if (portalToken) {
+        this._fbToken = portalToken;
+      }
+    } else {
+      this._admin = new URLSearchParams(window.location.search).has(
+        this.getAttribute('admin-param') || 'admin'
+      );
+      // Also allow admin mode via sessionStorage (set by /admin login page)
+      if (!this._admin) {
+        try { this._admin = sessionStorage.getItem('pg-admin') === 'true'; } catch(e) {}
+      }
     }
 
     this._columns = (this.getAttribute('columns') || '2,3,4').split(',').map(Number);
@@ -66,8 +78,10 @@ class PortfolioGrid extends HTMLElement {
     // admin-key attribute, or the credential the portal feed page stores
     // after verifying the signed-in artist (server checks it on every save)
     let sessKey = '';
-    try { sessKey = sessionStorage.getItem('pg-admin-pw') || ''; } catch (e) {}
+    let fbToken = '';
+    try { fbToken = sessionStorage.getItem('pg-firebase-token') || ''; } catch (e) {}
     this._adminKey = this.getAttribute('admin-key') || sessKey;
+    this._fbToken = fbToken;
 
     this._buildDOM();
     this._loadState().then(() => {
@@ -98,21 +112,45 @@ class PortfolioGrid extends HTMLElement {
     // Clear any previous content
     this.innerHTML = '';
 
+    // Layout container
+    this._layoutContainer = document.createElement('div');
+    this._layoutContainer.className = 'pg-layout-container';
+
     // Grid container
     this._grid = document.createElement('div');
     this._grid.className = 'pg-grid';
     this._grid.setAttribute('role', 'list');
 
+    // Hidden tray
+    this._hiddenTray = document.createElement('div');
+    this._hiddenTray.className = 'pg-hidden-tray';
+    this._hiddenTray.setAttribute('role', 'list');
+
+    this._layoutContainer.appendChild(this._grid);
+    this._layoutContainer.appendChild(this._hiddenTray);
+
     // Admin bar (hidden by default)
     this._adminBar = document.createElement('div');
     this._adminBar.className = 'pg-admin-bar';
-    this._adminBar.innerHTML = '<span class="pg-admin-title">Admin</span>' +
+    this._adminBar.innerHTML = '<span class="pg-admin-title"></span>' +
       '<button class="pg-admin-upload">Upload</button>' +
       '<button class="pg-admin-reset">Reset Order</button>' +
       '<button class="pg-admin-logout">Logout</button>' +
-      '<span class="pg-admin-count"></span>' +
       '<span class="pg-admin-pin-count"></span>' +
       '<span class="pg-admin-status"></span>';
+
+    // Bulk actions bar
+    this._bulkBar = document.createElement('div');
+    this._bulkBar.className = 'pg-bulk-actions';
+    this._bulkBar.style.display = 'none';
+    this._bulkBar.innerHTML = 
+      '<span class="pg-bulk-count">0 Selected</span>' +
+      '<button class="pg-bulk-hide">Hide</button>' +
+      '<button class="pg-bulk-show">Show</button>' +
+      '<button class="pg-bulk-pin">Pin</button>' +
+      '<button class="pg-bulk-unpin">Unpin</button>' +
+      '<div class="pg-bulk-divider"></div>' +
+      '<button class="pg-bulk-clear">Clear</button>';
 
     // Inject a <style> into the element for scoped defaults (overridable via custom properties)
     if (!document.getElementById('pg-inline-styles')) {
@@ -122,7 +160,8 @@ class PortfolioGrid extends HTMLElement {
       document.head.appendChild(style);
     }
 
-    this.appendChild(this._grid);
+    this.appendChild(this._layoutContainer);
+    this.appendChild(this._bulkBar);
   }
 
   _getCSS() {
@@ -131,7 +170,14 @@ class PortfolioGrid extends HTMLElement {
     return `
       :host { display: block; }
 
+      .pg-layout-container {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
       .pg-grid {
+        width: 100%;
         display: grid;
         grid-template-columns: repeat(${cols[0] || 2}, 1fr);
         gap: 12px;
@@ -142,6 +188,43 @@ class PortfolioGrid extends HTMLElement {
       }
       @media (min-width: 1024px) {
         .pg-grid { grid-template-columns: repeat(${cols[2] || 4}, 1fr); }
+      }
+
+      .pg-hidden-tray {
+        display: none;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 8px;
+        width: 100%;
+        background: var(--portfolio-bg, rgba(0,0,0,0.05));
+        border: 1px solid var(--portfolio-border, rgba(255,255,255,0.1));
+        padding: 12px;
+        border-radius: 2px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+      }
+      /* Custom scrollbar for the tray */
+      .pg-hidden-tray::-webkit-scrollbar {
+        height: 8px;
+      }
+      .pg-hidden-tray::-webkit-scrollbar-track {
+        background: rgba(0,0,0,0.1);
+        border-radius: 4px;
+      }
+      .pg-hidden-tray::-webkit-scrollbar-thumb {
+        background: var(--portfolio-gold, #c9a044);
+        border-radius: 4px;
+      }
+
+      .pg-hidden-tray .pg-item { 
+        width: 120px; 
+        flex-shrink: 0; 
+        aspect-ratio: 1; 
+      }
+      
+      @media (max-width: 640px) {
+        .pg-hidden-tray .pg-item { width: 100px; }
       }
 
       .pg-item {
@@ -158,6 +241,20 @@ class PortfolioGrid extends HTMLElement {
       .pg-item:hover {
         border-color: var(--portfolio-gold, #c9a044);
         transform: translateY(-4px);
+      }
+      .pg-item.pg-selected {
+        border: 2px solid #3b82f6;
+        transform: scale(0.96);
+      }
+      .pg-item.pg-selected::after {
+        content: '✓';
+        position: absolute;
+        top: 8px; left: 8px;
+        width: 24px; height: 24px;
+        background: #3b82f6; color: white;
+        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        font-weight: bold; font-size: 14px;
+        z-index: 10;
       }
       .pg-item img {
         width: 100%;
@@ -308,6 +405,25 @@ class PortfolioGrid extends HTMLElement {
         background: rgba(0,0,0,0.6);
         color: #fff;
       }
+      .pg-bulk-actions {
+        position: fixed;
+        bottom: 24px; left: 50%;
+        transform: translateX(-50%);
+        background: #111;
+        border: 1px solid rgba(255,255,255,0.1);
+        padding: 12px 24px;
+        border-radius: 8px;
+        display: flex; gap: 12px; align-items: center;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        z-index: 9999;
+      }
+      .pg-bulk-actions button {
+        background: transparent; color: white; border: 1px solid rgba(255,255,255,0.2);
+        padding: 6px 12px; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 14px;
+      }
+      .pg-bulk-actions button:hover { background: rgba(255,255,255,0.1); }
+      .pg-bulk-count { font-weight: bold; color: var(--portfolio-gold, #c9a044); margin-right: 12px; }
+      .pg-bulk-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 4px; }
     `;
   }
 
@@ -321,8 +437,16 @@ class PortfolioGrid extends HTMLElement {
       return;
     }
 
-    const src = this.getAttribute('src');
+    let src = this.getAttribute('src');
     if (!src) return;
+
+    if (!this._admin && sessionStorage.getItem('pg-slow-conn') === 'true') {
+      try {
+        const u = new URL(src, window.location.href);
+        u.searchParams.set('limit', '20');
+        src = u.toString();
+      } catch(e) {}
+    }
 
     try {
       const resp = await fetch(src, { signal: AbortSignal.timeout(10000) });
@@ -370,7 +494,7 @@ class PortfolioGrid extends HTMLElement {
     if (this._stateUrl) {
       try {
         const resp = await fetch(this._stateUrl, {
-          headers: this._adminKey ? { 'X-Admin-Key': this._adminKey } : {},
+          headers: this._fbToken ? { 'Authorization': 'Bearer ' + this._fbToken } : (this._adminKey ? { 'X-Admin-Key': this._adminKey } : {}),
           signal: AbortSignal.timeout(5000),
         });
         if (!resp.ok) {
@@ -407,7 +531,7 @@ class PortfolioGrid extends HTMLElement {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(this._adminKey ? { 'X-Admin-Key': this._adminKey } : {}),
+          ...(this._fbToken ? { 'Authorization': 'Bearer ' + this._fbToken } : (this._adminKey ? { 'X-Admin-Key': this._adminKey } : {})),
         },
         body: JSON.stringify(payload),
       }).catch(() => {}); // fire-and-forget
@@ -432,14 +556,11 @@ class PortfolioGrid extends HTMLElement {
 
   _renderGrid() {
     this._grid.innerHTML = '';
+    if (this._hiddenTray) this._hiddenTray.innerHTML = '';
     if (!this._images.length) return;
 
     const order = this._state.order;
-    // For non-admin: remove hidden images entirely so grid reflows
-    let filtered = this._admin ? this._images : this._images.filter(function(img) {
-      return !this._state.hidden[img.id];
-    }.bind(this));
-    let sorted = filtered.slice();
+    let sorted = this._images.slice();
 
     if (order && order.length) {
       // Detect new images not yet in the order
@@ -463,10 +584,23 @@ class PortfolioGrid extends HTMLElement {
       });
     }
 
+    let hasHidden = false;
     sorted.forEach((img, i) => {
+      // Non-admin skips hidden entirely
+      if (!this._admin && this._state.hidden[img.id]) return;
+
       const el = this._buildItem(img, i);
-      this._grid.appendChild(el);
+      if (this._admin && this._state.hidden[img.id]) {
+        this._hiddenTray.appendChild(el);
+        hasHidden = true;
+      } else {
+        this._grid.appendChild(el);
+      }
     });
+
+    if (this._admin && this._hiddenTray) {
+      this._hiddenTray.style.display = hasHidden ? 'flex' : 'none';
+    }
   }
 
   _buildItem(img, index) {
@@ -502,21 +636,7 @@ class PortfolioGrid extends HTMLElement {
 
   _applyState() {
     if (!this._ready) return;
-    if (this._admin) {
-      // Admin: just toggle the hidden class
-      const items = Array.from(this._grid.querySelectorAll('.pg-item'));
-      items.forEach(el => {
-        const id = el.dataset.id;
-        if (this._state.hidden[id]) {
-          el.classList.add('pg-hidden');
-        } else {
-          el.classList.remove('pg-hidden');
-        }
-      });
-    } else {
-      // Non-admin: re-render to remove hidden images
-      this._renderGrid();
-    }
+    this._renderGrid();
     this._updateCount();
     this._refreshLightbox();
   }
@@ -527,7 +647,7 @@ class PortfolioGrid extends HTMLElement {
     if (!this._admin || !this._images.length) return;
 
     // Show admin bar
-    this.insertBefore(this._adminBar, this._grid);
+    this.insertBefore(this._adminBar, this._layoutContainer);
     this._adminBar.classList.add('pg-visible');
 
     const resetBtn = this._adminBar.querySelector('.pg-admin-reset');
@@ -544,6 +664,10 @@ class PortfolioGrid extends HTMLElement {
     }.bind(this));
 
     var uploadBtn = this._adminBar.querySelector('.pg-admin-upload');
+    uploadBtn.style.display = this._fbToken ? 'inline-block' : 'none';
+
+    this._bindBulkActions();
+
     if (uploadBtn) {
       uploadBtn.addEventListener('click', function() {
         window.location.href = '/admin/upload/';
@@ -552,8 +676,15 @@ class PortfolioGrid extends HTMLElement {
 
     var logoutBtn = this._adminBar.querySelector('.pg-admin-logout');
     if (logoutBtn) {
-      logoutBtn.addEventListener('click', function() {
+      if (this.getAttribute('force-admin') === 'true') {
+        logoutBtn.style.display = 'none';
+      }
+      logoutBtn.addEventListener('click', async () => {
         try { sessionStorage.removeItem('pg-admin'); } catch(e) {}
+        try {
+          const db = await import('/portal/db.mjs');
+          await db.signOut();
+        } catch(e) {}
         window.location.href = '/';
       });
     }
@@ -580,7 +711,7 @@ class PortfolioGrid extends HTMLElement {
     this._updateCount();
 
     // Add controls to each item
-    const items = Array.from(this._grid.querySelectorAll('.pg-item'));
+    const items = Array.from(this._layoutContainer.querySelectorAll('.pg-item'));
     items.forEach(el => {
       const id = el.dataset.id;
 
@@ -597,14 +728,9 @@ class PortfolioGrid extends HTMLElement {
         e.stopPropagation();
         e.preventDefault();
         this._state.hidden[id] = !this._state.hidden[id];
-        if (this._state.hidden[id]) {
-          cb.classList.remove('pg-checked');
-          el.classList.add('pg-hidden');
-        } else {
-          cb.classList.add('pg-checked');
-          el.classList.remove('pg-hidden');
-        }
         this._saveState();
+        this._renderGrid();
+        this._initAdmin(); // Reattach events to re-rendered items
         this._updateCount();
         this._showStatus('Image ' + (this._state.hidden[id] ? 'hidden' : 'visible'));
       });
@@ -649,14 +775,15 @@ class PortfolioGrid extends HTMLElement {
         e.preventDefault();
         var caption = el.getAttribute('aria-label') || id;
         if (!confirm('Delete "' + caption.slice(0, 60) + '"?\n\nThis permanently removes the image from disk. This cannot be undone.')) return;
-        var pw = '';
-        try { pw = sessionStorage.getItem('pg-admin-pw') || ''; } catch(e) {}
-        if (!pw) { pw = prompt('Enter admin password to delete'); if (!pw) return; }
+        if (!this._fbToken) { alert('You must be logged into the Portal to delete images.'); return; }
         pgDelete.textContent = '...';
-        fetch('/api/delete-upload', {
+        fetch('/portal-api/delete-upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ artist: this._uid, id: id, password: pw })
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + this._fbToken
+          },
+          body: JSON.stringify({ artist: this._uid, id: id })
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
@@ -679,6 +806,7 @@ class PortfolioGrid extends HTMLElement {
           alert('Delete failed. Check your connection.');
         });
       }.bind(this));
+      bar.appendChild(pgDelete);
       // Up/down move buttons (visible only in reorder mode)
       var moveUp = document.createElement('div');
       moveUp.className = 'pg-move-up';
@@ -901,7 +1029,7 @@ class PortfolioGrid extends HTMLElement {
   }
 
   _allItems() {
-    return Array.from(this._grid.querySelectorAll('.pg-item'));
+    return Array.from(this._layoutContainer.querySelectorAll('.pg-item:not(.pg-hidden)'));
   }
 
   _updateCount() {
@@ -993,12 +1121,81 @@ class PortfolioGrid extends HTMLElement {
   }
 
   _refreshLightbox() {
-    const visible = this._allItems().filter(el => !el.classList.contains('pg-hidden'));
-    visible.forEach((el, i) => {
+    const items = this._allItems();
+    items.forEach((el) => {
       el.onclick = e => {
+        // Don't trigger if clicking admin buttons directly
+        if (e.target.closest('.pg-checkbox, .pg-pin, .pg-delete, .pg-move-up, .pg-move-down')) return;
         e.preventDefault();
-        this._openLightbox(i);
+        
+        if (this._admin) {
+          this._toggleSelection(el.dataset.id);
+        } else if (!el.classList.contains('pg-hidden')) {
+          const visible = items.filter(x => !x.classList.contains('pg-hidden'));
+          const idx = visible.indexOf(el);
+          if (idx !== -1) this._openLightbox(idx);
+        }
       };
+    });
+  }
+
+  _toggleSelection(id) {
+    if (this._selectedIds.has(id)) {
+      this._selectedIds.delete(id);
+    } else {
+      this._selectedIds.add(id);
+    }
+    const el = this._layoutContainer.querySelector('.pg-item[data-id="' + id + '"]') || 
+               this._hiddenTray.querySelector('.pg-item[data-id="' + id + '"]');
+    if (el) {
+      if (this._selectedIds.has(id)) el.classList.add('pg-selected');
+      else el.classList.remove('pg-selected');
+    }
+    this._updateBulkActions();
+  }
+
+  _updateBulkActions() {
+    if (!this._bulkBar) return;
+    const count = this._selectedIds.size;
+    this._bulkBar.style.display = count > 0 ? 'flex' : 'none';
+    const countSpan = this._bulkBar.querySelector('.pg-bulk-count');
+    if (countSpan) countSpan.textContent = count + ' Selected';
+  }
+
+  _bindBulkActions() {
+    if (this._bulkBound || !this._bulkBar) return;
+    this._bulkBound = true;
+
+    const doAction = (actionFn) => {
+      this._selectedIds.forEach(id => actionFn(id));
+      this._selectedIds.clear();
+      this._saveState();
+      this._renderGrid();
+      this._initAdmin();
+      this._updateCount();
+      this._updateBulkActions();
+    };
+
+    this._bulkBar.querySelector('.pg-bulk-hide').addEventListener('click', () => {
+      doAction(id => this._state.hidden[id] = true);
+      this._showStatus('Selected images hidden');
+    });
+    this._bulkBar.querySelector('.pg-bulk-show').addEventListener('click', () => {
+      doAction(id => this._state.hidden[id] = false);
+      this._showStatus('Selected images visible');
+    });
+    this._bulkBar.querySelector('.pg-bulk-pin').addEventListener('click', () => {
+      doAction(id => this._state.pinned[id] = true);
+      this._showStatus('Selected images pinned');
+    });
+    this._bulkBar.querySelector('.pg-bulk-unpin').addEventListener('click', () => {
+      doAction(id => this._state.pinned[id] = false);
+      this._showStatus('Selected images unpinned');
+    });
+    this._bulkBar.querySelector('.pg-bulk-clear').addEventListener('click', () => {
+      this._selectedIds.clear();
+      this._allItems().forEach(el => el.classList.remove('pg-selected'));
+      this._updateBulkActions();
     });
   }
 
